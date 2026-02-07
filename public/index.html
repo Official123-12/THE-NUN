@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>THE NUN | AWAKENING</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: 'Times New Roman', serif; overflow: hidden; user-select: none; }
+        .iphone { width: 340px; height: 720px; background: rgba(10, 10, 10, 0.95); border: 8px solid #1a1a1a; border-radius: 55px; position: relative; box-shadow: 0 0 50px rgba(255, 0, 0, 0.1); display: flex; flex-direction: column; align-items: center; padding: 25px; }
+        .island { width: 110px; height: 30px; background: #000; border-radius: 20px; margin-bottom: 40px; }
+        .glow { color: #ff0000; text-shadow: 0 0 20px #ff0000; letter-spacing: 5px; font-weight: bold; font-variant: small-caps; }
+        input { width: 85%; background: #080808; border: 1px solid #222; border-radius: 12px; padding: 18px; color: #ff0000; text-align: center; outline: none; margin-bottom: 25px; font-size: 1.1rem; }
+        button { width: 85%; padding: 18px; background: #1a0000; border: 1px solid #ff0000; color: #ff0000; font-weight: bold; border-radius: 15px; text-transform: uppercase; transition: 0.4s; }
+        button:active { transform: scale(0.95); background: #ff0000; color: #000; }
+        #code { font-size: 38px; color: #fff; font-family: monospace; margin-top: 50px; cursor: pointer; display: none; text-shadow: 0 0 10px #ff0000; letter-spacing: 4px; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+    <div class="iphone">
+        <div class="island"></div>
+        <img src="https://files.catbox.moe/59ays3.jpg" style="width: 110px; height: 110px; border-radius: 50%; border: 2px solid #ff0000; margin-bottom: 20px; box-shadow: 0 0 20px #ff0000;">
+        <h1 class="glow text-xl">ᴛ ʜ ᴇ  ɴ ᴜ ɴ</h1>
+        <p class="text-[10px] text-gray-700 tracking-[3px] mt-2">✞ ᴇᴛᴇʀɴᴀʟ ᴠɪɢɪʟ ʙʏ ꜱᴛᴀɴʏᴛᴢ ✞</p>
+        <input type="number" id="num" placeholder="2557XXXXXXXX">
+        <button onclick="get()">ᴀᴡᴀᴋᴇɴ</button>
+        <div id="code" onclick="copy()">--------</div>
+    </div>
+    <script>
+        async function get() {
+            const n = document.getElementById('num').value;
+            if(!n) return;
+            const btn = document.querySelector('button');
+            btn.innerText = "ɪɴᴠᴏᴋɪɴɢ...";
+            const res = await fetch('/code?number=' + n);
+            const data = await res.json();
+            document.getElementById('code').style.display = "block";
+            document.getElementById('code').innerText = data.code;
+            btn.innerText = "ᴀᴡᴀᴋᴇɴᴇᴅ";
+        }
+        function copy() {
+            navigator.clipboard.writeText(document.getElementById('code').innerText);
+            alert("Prophecy Copied.");
+        }
+    </script>
+</body>
+</html>
