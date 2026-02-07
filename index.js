@@ -21,10 +21,10 @@ const activeSessions = new Map();
 const msgCache = new Map();
 
 // 🟢 GLOBAL STABILITY SHIELD
-process.on('unhandledRejection', e => console.log('🛡️ Rejection Shield:', e));
-process.on('uncaughtException', e => console.log('🛡️ Exception Shield:', e));
+process.on('unhandledRejection', e => console.log('🛡️ Rejection Shielded:', e));
+process.on('uncaughtException', e => console.log('🛡️ Exception Shielded:', e));
 
-// 💎 THE NUN NEWSLETTER MASKING
+// 💎 THE NUN NEWSLETTER MASK
 const ghostContext = {
     isForwarded: true,
     forwardingScore: 999,
@@ -35,35 +35,28 @@ const ghostContext = {
     }
 };
 
-/**
- * 🔐 EXORCISM SCANNER (Security Logic)
- */
-async function exorcismScanner(sock, m) {
-    const from = m.key.remoteJid;
-    const sender = m.key.participant || from;
-    const body = (m.message.conversation || m.message.extendedTextMessage?.text || "").toLowerCase();
-    const type = getContentType(m.message);
-
-    if (!from.endsWith('@g.us') || m.key.fromMe) return false;
-
-    const demonFound = /(http|porn|xxx|sex|ngono|bundle|fixed match|invest|earn money)/gi.test(body);
-    const mediaFound = (type === 'imageMessage' || type === 'videoMessage' || type === 'audioMessage');
-
-    if (demonFound || mediaFound) {
-        await sock.sendMessage(from, { delete: m.key });
-        await sock.sendMessage(from, { 
-            text: `✞ *ᴇxᴏʀᴄɪꜱᴍ ᴀᴄᴛɪᴏɴ* 🕯️\n\nᴛʜᴇ ᴅᴇᴍᴏɴ @${sender.split('@')[0]} ʜᴀꜱ ʙᴇᴇɴ ᴘᴜʀɢᴇᴅ ꜰᴏʀ ᴠɪᴏʟᴀᴛɪɴɢ ᴛʜᴇ ꜱᴀɴᴄᴛᴜᴀʀʏ.\nʀᴇᴀꜱᴏɴ: ᴜɴʜᴏʟʏ ᴄᴏɴᴛᴇɴᴛ.`,
-            mentions: [sender],
-            contextInfo: ghostContext
-        });
-        await sock.groupParticipantsUpdate(from, [sender], "remove");
-        return true;
-    }
-    return false;
-}
+const commands = new Map();
+const loadCmds = () => {
+    const cmdPath = path.resolve(__dirname, 'commands');
+    if (!fs.existsSync(cmdPath)) fs.mkdirSync(cmdPath);
+    fs.readdirSync(cmdPath).forEach(folder => {
+        const folderPath = path.join(cmdPath, folder);
+        if (fs.lstatSync(folderPath).isDirectory()) {
+            fs.readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
+                try {
+                    const cmd = require(path.join(folderPath, file));
+                    if (cmd && cmd.name) {
+                        cmd.category = folder;
+                        commands.set(cmd.name.toLowerCase(), cmd);
+                    }
+                } catch (e) {}
+            });
+        }
+    });
+};
 
 /**
- * 🦾 SUPREME GHOST LOGIC (AI, STATUS, AUTOMATION)
+ * 🧠 SUPREME PHANTOM LOGIC (AI, SECURITY, AUTOMATION)
  */
 async function handlePhantomLogic(sock, m) {
     const from = m.key.remoteJid;
@@ -76,14 +69,11 @@ async function handlePhantomLogic(sock, m) {
     // 1. AUTO PRESENCE
     await sock.sendPresenceUpdate('composing', from);
 
-    // 2. SECURITY SCANNER
-    if (await exorcismScanner(sock, m)) return;
-
-    // 3. PHANTOM RECOVERY (Anti-Delete & ViewOnce to User DM)
+    // 2. PHANTOM RECOVERY (Anti-Delete & ViewOnce to User DM)
     if (m.message?.protocolMessage?.type === 0 && !m.key.fromMe) {
         const cached = msgCache.get(m.message.protocolMessage.key.id);
         if (cached) {
-            await sock.sendMessage(sock.user.id, { text: `✞ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ* ✞\nRecovered deleted trace from @${sender.split('@')[0]}`, mentions: [sender] });
+            await sock.sendMessage(sock.user.id, { text: `✞ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ* ✞\nCaptured from @${sender.split('@')[0]}`, mentions: [sender] });
             await sock.copyNForward(sock.user.id, cached, false, { contextInfo: ghostContext });
         }
     }
@@ -92,51 +82,51 @@ async function handlePhantomLogic(sock, m) {
         await sock.copyNForward(sock.user.id, m, false, { contextInfo: ghostContext });
     }
 
-    // 4. FORCE JOIN (Group JID: 120363406549688641@g.us)
-    if (body.startsWith('.') && !m.key.fromMe) {
-        try {
-            const groupMetadata = await sock.groupMetadata('120363406549688641@g.us');
-            if (!groupMetadata.participants.find(p => p.id === (sender.split(':')[0] + '@s.whatsapp.net'))) {
-                return sock.sendMessage(from, { text: "✞ *ᴀᴄᴄᴇꜱꜱ ᴅᴇɴɪᴇᴅ* ✞\nᴊᴏɪɴ ᴛʜᴇ ꜱᴀɴᴄᴛᴜᴀʀʏ ᴛᴏ ᴜꜱᴇ ᴛʜᴇ ɴᴜɴ:\nhttps://chat.whatsapp.com/J19JASXoaK0GVSoRvShr4Y", contextInfo: ghostContext });
-            }
-        } catch (e) {}
+    // 3. EXORCISM (ANTI-LINK / PORN / SCAM)
+    if (from.endsWith('@g.us') && !m.key.fromMe) {
+        const demonScan = /(http|porn|xxx|sex|ngono|bundle|fixed match|earn money)/gi;
+        if (demonScan.test(body)) {
+            await sock.sendMessage(from, { delete: m.key });
+            await sock.sendMessage(from, { text: `✞ *ᴇxᴏʀᴄɪꜱᴍ* ✞\nThe demon @${sender.split('@')[0]} has been purged.`, mentions: [sender], contextInfo: ghostContext });
+            await sock.groupParticipantsUpdate(from, [sender], "remove");
+        }
     }
 
-    // 5. GHOSTLY AUTO-AI (Natural Person - Swahili/English/All)
+    // 4. AUTO STATUS ENGINE (HUMAN MOOD)
+    if (from === 'status@broadcast') {
+        await sock.readMessages([m.key]);
+        const moodPrompt = `React as a mysterious but cool human friend to this status briefly in User Language and Mood: "${body}". No quotes.`;
+        const aiMood = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(moodPrompt)}`);
+        await sock.sendMessage(from, { text: aiMood.data, contextInfo: ghostContext }, { quoted: m });
+        await sock.sendMessage(from, { react: { text: '🥀', key: m.key } }, { statusJidList: [sender] });
+    }
+
+    // 5. GHOSTLY AUTO-AI CHAT (Universal Personality)
     if (!body.startsWith('.') && !m.key.fromMe && body.length > 2 && !from.endsWith('@g.us')) {
         try {
-            const aiPrompt = `Your name is THE NUN. Your developer is STANYTZ. You are a mysterious guardian. Reply very briefly and naturally to: ${body}`;
+            const aiPrompt = `Your name is THE NUN, a mysterious human-like guardian by STANYTZ. Respond naturally, briefly, and helpfully in the user's language: ${body}`;
             const aiRes = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`);
             await sock.sendMessage(from, { text: `ᴛʜᴇ ɴᴜɴ 🥀\n\n${aiRes.data}\n\n_ɪɴ ꜱʜᴀᴅᴏᴡꜱ ᴡᴇ ᴛʀᴜꜱᴛ._`, contextInfo: ghostContext }, { quoted: m });
         } catch (e) {}
     }
 
-    // 6. GOTHIC MENU
-    if (body.toLowerCase() === '.menu') {
-        let uptime = `${Math.floor(process.uptime() / 3600)}ʜ ${Math.floor((process.uptime() % 3600) / 60)}ᴍ`;
-        let menuBody = `╭─── • ✞ • ───╮\n      ᴛ ʜ ᴇ  ɴ ᴜ ɴ  \n╰─── • ✞ • ───╯\n\n`;
-        menuBody += `✟  ɢᴜᴀʀᴅɪᴀɴ : ${m.pushName}\n`;
-        menuBody += `✟  ᴜᴘᴛɪᴍᴇ : ${uptime}\n`;
-        menuBody += `✟  ᴅᴇᴠᴇʟᴏᴘᴇʀ : ꜱᴛᴀɴʏᴛᴢ\n\n`;
-        menuBody += `🕯️  ꜱ ᴀ ɴ ᴄ ᴛ ᴜ ᴀ ʀ ʏ\n`;
-        menuBody += `───────────────\n`;
-        menuBody += `   ✞ .ping\n   ✞ .ai\n   ✞ .vision\n   ✞ .ritual\n   ✞ .purge\n\n`;
-        menuBody += `_ᴅᴏᴍɪɴᴜꜱ ᴠᴏʙɪꜱᴄᴜᴍ_ 🥀`;
-
-        await sock.sendMessage(from, { 
-            text: menuBody, 
-            contextInfo: {
-                ...ghostContext,
-                externalAdReply: {
-                    title: "✞ THE NUN MAINFRRAME ✞",
-                    body: "IN SHADOWS WE TRUST",
-                    mediaType: 1,
-                    renderLargerThumbnail: true,
-                    thumbnailUrl: "https://files.catbox.moe/59ays3.jpg",
-                    showAdAttribution: true 
-                }
+    // 6. COMMAND EXECUTION (Reply-By-Number Support)
+    const quoted = m.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+    const quotedText = (quoted?.conversation || quoted?.extendedTextMessage?.text || "").toLowerCase();
+    if (quoted && !isNaN(body)) {
+        for (let [name, obj] of commands) {
+            if (quotedText.includes(name)) {
+                await obj.execute(m, sock, Array.from(commands.values()), [body.trim()], null, ghostContext);
+                return;
             }
-        });
+        }
+    }
+
+    if (body.startsWith('.')) {
+        const args = body.slice(1).trim().split(/ +/);
+        const cmdName = args.shift().toLowerCase();
+        const cmd = commands.get(cmdName);
+        if (cmd) await cmd.execute(m, sock, Array.from(commands.values()), args, null, ghostContext);
     }
 }
 
@@ -148,22 +138,22 @@ async function startNun(num) {
     const sessionPath = path.join(__dirname, 'sessions', num);
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
-    const sock = makeWASocket({
+    const sockInstance = makeWASocket({
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
         logger: pino({ level: 'silent' }),
         browser: Browsers.ubuntu("Chrome"),
         markOnlineOnConnect: true
     });
 
-    activeSessions.set(num, sock);
-    sock.ev.on('creds.update', saveCreds);
+    activeSessions.set(num, sockInstance);
+    sockInstance.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (u) => {
+    sockInstance.ev.on('connection.update', async (u) => {
         const { connection, lastDisconnect } = u;
         if (connection === 'open') {
             console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
             const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
-            await sock.sendMessage(sock.user.id, { text: msg, contextInfo: ghostContext });
+            await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
         }
         if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
             activeSessions.delete(num);
@@ -171,16 +161,18 @@ async function startNun(num) {
         }
     });
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
+    sockInstance.ev.on('messages.upsert', async ({ messages }) => {
         const m = messages[0];
         if (!m.message) return;
-        await handlePhantomLogic(sock, m);
+        await handlePhantomLogic(sockInstance, m);
     });
 }
 
 /**
- * 🟢 PAIRING & HEALTH ROUTES
+ * 🟢 ROUTES (PAIRING & UI)
  */
+app.use(express.static('public'));
+
 app.get('/code', async (req, res) => {
     let num = req.query.number.replace(/\D/g, '');
     if (!num) return res.status(400).send({ error: "Missing Number" });
@@ -199,21 +191,24 @@ app.get('/code', async (req, res) => {
 
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
 
+/**
+ * 🟢 SERVER STARTUP
+ */
 app.listen(PORT, async () => {
+    loadCmds();
     console.log(`✞ THE NUN MAINFRRAME: PORT ${PORT} ✞`);
-    // 🟢 AUTO-RESTORE ALL SESSIONS
     const sessionsDir = path.join(__dirname, 'sessions');
     if (fs.existsSync(sessionsDir)) {
         fs.readdirSync(sessionsDir).forEach(num => startNun(num));
     }
 });
 
-// ALWAYS ONLINE & BIO
+// AUTO BIO & ALWAYS ONLINE
 setInterval(async () => {
     for (let s of activeSessions.values()) {
         if (s.user) {
             const up = Math.floor(process.uptime() / 3600);
-            await s.updateProfileStatus(`THE NUN 🥀 | ETERNAL VIGIL | ${up}h Active`).catch(() => {});
+            await s.updateProfileStatus(`ᴛʜᴇ ɴᴜɴ 🥀 | ᴇᴛᴇʀɴᴀʟ ᴠɪɢɪʟ | ${up}ʜ ᴀᴄᴛɪᴠᴇ`).catch(() => {});
             await s.sendPresenceUpdate('available');
         }
     }
