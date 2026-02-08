@@ -1,20 +1,22 @@
 require('dotenv').config();
 
+// 🔥 USING ANGULARSOCKETS 1.4.5 (BAILEYS FORK)
 const {
   default: makeWASocket,
   DisconnectReason,
   Browsers,
   delay,
-  fetchLatestBaileysVersion,
+  useMultiFileAuthState,
+  getContentType,
   makeCacheableSignalKeyStore,
   initAuthCreds,
   BufferJSON,
-  getContentType
-} = require('@whiskeysockets/baileys');
+  fetchLatestBaileysVersion
+} = require('@whiskeysockets/baileys'); // This points to angularsockets@1.4.5
 
-// 🔥 FIXED FIREBASE IMPORTS
-const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs } = require('firebase/firestore');
+// 🔥 FIREBASE V8 (COMPATIBLE WITH ANGULARSOCKETS)
+const firebase = require('firebase');
+require('firebase/firestore');
 
 const express = require('express');
 const pino = require('pino');
@@ -35,8 +37,17 @@ const firebaseConfig = {
   appId: "1:381983533939:web:e6cc9445137c74b99df306"
 };
 
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+// Initialize Firebase
+let db;
+try {
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  db = firebase.firestore();
+  console.log('✅ Firebase initialized successfully');
+} catch (error) {
+  console.error('❌ Firebase error:', error);
+}
 
 const app = express();
 const commands = new Map();
@@ -88,8 +99,8 @@ async function handlePhantomLogic(sock, m, num) {
   const ownerId = sock.user.id.split(':')[0];
   const isOwner = sender.startsWith(num) || m.key.fromMe;
 
-  const setSnap = await getDoc(doc(db, "SETTINGS", ownerId));
-  const s = setSnap.exists() ? setSnap.data() : { mode: "public" };
+  const setSnap = await db.collection("SETTINGS").doc(ownerId).get();
+  const s = setSnap.exists ? setSnap.data() : { mode: "public" };
   if (s.mode === "private" && !isOwner) return;
 
   // 1. AUTO PRESENCE
@@ -140,9 +151,9 @@ async function handlePhantomLogic(sock, m, num) {
   }
 }
 
-// 🔥 FIREBASE AUTH STATE
+// 🔥 FIREBASE AUTH STATE FOR ANGULARSOCKETS
 async function useFirebaseAuthState(db, collectionName, userId) {
-  const authDoc = doc(db, collectionName, userId);
+  const authRef = db.collection(collectionName).doc(userId);
 
   const state = {
     creds: initAuthCreds(),
@@ -150,16 +161,28 @@ async function useFirebaseAuthState(db, collectionName, userId) {
   };
 
   // Load from Firebase
-  const snap = await getDoc(authDoc);
-  if (snap.exists()) {
+  const snap = await authRef.get();
+  if (snap.exists) {
     const data = snap.data();
-    if (data.creds) state.creds = JSON.parse(data.creds, BufferJSON.reviver);
-    if (data.keys) state.keys = JSON.parse(data.keys, BufferJSON.reviver);
+    if (data.creds) {
+      try {
+        state.creds = JSON.parse(data.creds, BufferJSON.reviver);
+      } catch (e) {
+        state.creds = initAuthCreds();
+      }
+    }
+    if (data.keys) {
+      try {
+        state.keys = JSON.parse(data.keys, BufferJSON.reviver);
+      } catch (e) {
+        state.keys = {};
+      }
+    }
   }
 
   const saveCreds = async () => {
     try {
-      await setDoc(authDoc, {
+      await authRef.set({
         creds: JSON.stringify(state.creds, BufferJSON.replacer),
         keys: JSON.stringify(state.keys, BufferJSON.replacer),
         updatedAt: new Date().toISOString()
@@ -171,7 +194,7 @@ async function useFirebaseAuthState(db, collectionName, userId) {
 
   const wipeSession = async () => {
     try {
-      await deleteDoc(authDoc);
+      await authRef.delete();
       state.creds = initAuthCreds();
       state.keys = {};
       console.log(`✅ Session wiped for ${userId}`);
@@ -217,7 +240,11 @@ async function startUserBot(num) {
       console.log(`📡 Connection update for ${num}:`, connection);
 
       if (connection === 'open') {
-        await setDoc(doc(db, "NUN_ACTIVE_USERS", num), { active: true, lastActive: new Date().toISOString() });
+        await db.collection("NUN_ACTIVE_USERS").doc(num).set({ 
+          active: true, 
+          lastActive: new Date().toISOString(),
+          user: sockInstance.user.id 
+        });
         console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
         const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
         await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
@@ -234,7 +261,7 @@ async function startUserBot(num) {
         } else {
           console.log(`❌ Logged out: ${num}`);
           activeSessions.delete(num);
-          await deleteDoc(doc(db, "NUN_ACTIVE_USERS", num));
+          await db.collection("NUN_ACTIVE_USERS").doc(num).delete();
         }
       }
     });
@@ -248,11 +275,13 @@ async function startUserBot(num) {
     // Handle call events
     sockInstance.ev.on('call', async (call) => {
       if (call.status === 'offer') {
-        await sockInstance.rejectCall(call.id, call.from);
-        await sockInstance.sendMessage(call.from, {
-          text: `✞ ᴛʜᴇ ɴᴜɴ ᴅᴏᴇꜱ ɴᴏᴛ ᴀᴄᴄᴇᴘᴛ ᴄᴀʟʟꜱ 🕯️\n\nᴘʟᴇᴀꜱᴇ ꜱᴇɴᴅ ᴀ ᴍᴇꜱꜱᴀɢᴇ ɪɴꜱᴛᴇᴀᴅ.`,
-          contextInfo: ghostContext
-        });
+        try {
+          await sockInstance.rejectCall(call.id, call.from);
+          await sockInstance.sendMessage(call.from, {
+            text: `✞ ᴛʜᴇ ɴᴜɴ ᴅᴏᴇꜱ ɴᴏᴛ ᴀᴄᴄᴇᴘᴛ ᴄᴀʟʟꜱ 🕯️\n\nᴘʟᴇᴀꜱᴇ ꜱᴇɴᴅ ᴀ ᴍᴇꜱꜱᴀɢᴇ ɪɴꜱᴛᴇᴀᴅ.`,
+            contextInfo: ghostContext
+          });
+        } catch (e) {}
       }
     });
 
@@ -296,23 +325,23 @@ app.get('/link', (req, res) => {
                 </head>
                 <body>
                     <h1>🔗 THE NUN PAIRING</h1>
-                    <input id="number" placeholder="+1234567890">
-                    <button onclick="getCode()">GET CODE</button>
+                    <input id="number" placeholder="+255123456789">
+                    <button onclick="getCode()">GET PAIRING CODE</button>
                     <div id="result"></div>
                     
                     <script>
                         async function getCode() {
                             const num = document.getElementById('number').value;
                             const resultDiv = document.getElementById('result');
-                            resultDiv.innerHTML = "Generating...";
+                            resultDiv.innerHTML = "Generating pairing code...";
                             
                             const res = await fetch('/code?number=' + encodeURIComponent(num));
                             const data = await res.json();
                             
                             if (data.code) {
-                                resultDiv.innerHTML = '✅ CODE: <strong>' + data.code + '</strong><br>Use WhatsApp > Linked Devices > Link Device';
+                                resultDiv.innerHTML = '<h3>✅ CODE: <strong style="color:#00ff00">' + data.code + '</strong></h3><p>Open WhatsApp > Settings > Linked Devices > Link a Device > Enter this code</p>';
                             } else {
-                                resultDiv.innerHTML = '❌ Error: ' + (data.error || 'Unknown');
+                                resultDiv.innerHTML = '<p style="color:yellow">❌ Error: ' + (data.error || 'Unknown') + '</p>';
                             }
                         }
                     </script>
@@ -336,8 +365,12 @@ app.get('/code', async (req, res) => {
       num = num.substring(1);
     }
 
-    // For international numbers, don't auto-add country code
-    // Let user input complete number with country code
+    // If starts with 255 (Tanzania), keep as is
+    // If starts with other country codes, keep as is
+    // If short number, assume local (add 255)
+    if (num.length === 9 && !num.startsWith('255')) {
+      num = '255' + num;
+    }
 
     console.log(`🔐 Requesting pairing code for: ${num}`);
 
@@ -462,10 +495,10 @@ app.listen(PORT, () => {
   loadCommands();
 
   // 🟢 AUTO-RESTORE active users from Firebase
-  getDocs(collection(db, "NUN_ACTIVE_USERS"))
+  db.collection("NUN_ACTIVE_USERS").get()
     .then(snap => {
       snap.forEach(doc => {
-        if (doc.exists() && doc.data().active) {
+        if (doc.exists && doc.data().active) {
           console.log(`🔄 Restoring session for: ${doc.id}`);
           setTimeout(() => {
             startUserBot(doc.id).catch(e =>
@@ -516,4 +549,4 @@ setInterval(async () => {
     const { version } = await fetchLatestBaileysVersion();
     console.log(`📱 WhatsApp Web version: ${version.join('.')}`);
   } catch (e) { }
-}, 3600000); // Check every hour
+}, 3600000);
