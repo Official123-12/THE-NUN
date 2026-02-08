@@ -4,9 +4,25 @@ const {
     makeCacheableSignalKeyStore, initAuthCreds, BufferJSON, getContentType 
 } = require('@whiskeysockets/baileys');
 
-// 🔥 FIXED FIREBASE IMPORTS - LATEST VERSION
-const { initializeApp } = require("firebase/app");
-const { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs } = require("firebase/firestore");
+// 🔥 FIREBASE ADMIN SDK (WORKS EVERYWHERE)
+const admin = require('firebase-admin');
+const serviceAccount = require('./serviceAccountKey.json');
+
+// Initialize Firebase Admin
+try {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('✅ Firebase Admin initialized');
+} catch (error) {
+    if (error.code === 'app/duplicate-app') {
+        console.log('✅ Firebase Admin already initialized');
+    } else {
+        console.error('❌ Firebase Admin error:', error);
+    }
+}
+
+const db = admin.firestore();
 
 const express = require('express');
 const pino = require('pino');
@@ -17,18 +33,6 @@ const fs = require('fs-extra');
 // 🛡️ GLOBAL STABILITY
 process.on('unhandledRejection', e => console.log('🛡️ Rejection Shield:', e));
 process.on('uncaughtException', e => console.log('🛡️ Exception Shield:', e));
-
-const firebaseConfig = {
-    apiKey: "AIzaSyDt3nPKKcYJEtz5LhGf31-5-jI5v31fbPc",
-    authDomain: "stanybots.firebaseapp.com",
-    projectId: "stanybots",
-    storageBucket: "stanybots.firebasestorage.app",
-    messagingSenderId: "381983533939",
-    appId: "1:381983533939:web:e6cc9445137c74b99df306"
-};
-
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
 
 const app = express();
 const commands = new Map();
@@ -80,8 +84,8 @@ async function handlePhantomLogic(sock, m, num) {
     const ownerId = sock.user.id.split(':')[0];
     const isOwner = sender.startsWith(num) || m.key.fromMe;
 
-    const setSnap = await getDoc(doc(db, "SETTINGS", ownerId));
-    const s = setSnap.exists() ? setSnap.data() : { mode: "public" };
+    const setSnap = await db.collection("SETTINGS").doc(ownerId).get();
+    const s = setSnap.exists ? setSnap.data() : { mode: "public" };
     if (s.mode === "private" && !isOwner) return;
 
     // 1. AUTO PRESENCE
@@ -132,9 +136,9 @@ async function handlePhantomLogic(sock, m, num) {
     }
 }
 
-// 🔥 UPDATED FIREBASE AUTH STATE FUNCTION
+// 🔥 FIREBASE ADMIN AUTH STATE
 async function useFirebaseAuthState(db, collectionName, userId) {
-    const authDoc = doc(db, collectionName, userId);
+    const authRef = db.collection(collectionName).doc(userId);
     
     const state = {
         creds: initAuthCreds(),
@@ -142,8 +146,8 @@ async function useFirebaseAuthState(db, collectionName, userId) {
     };
 
     // Load from Firebase
-    const snap = await getDoc(authDoc);
-    if (snap.exists()) {
+    const snap = await authRef.get();
+    if (snap.exists) {
         const data = snap.data();
         if (data.creds) state.creds = JSON.parse(data.creds, BufferJSON.reviver);
         if (data.keys) state.keys = JSON.parse(data.keys, BufferJSON.reviver);
@@ -151,7 +155,7 @@ async function useFirebaseAuthState(db, collectionName, userId) {
 
     const saveCreds = async () => {
         try {
-            await setDoc(authDoc, {
+            await authRef.set({
                 creds: JSON.stringify(state.creds, BufferJSON.replacer),
                 keys: JSON.stringify(state.keys, BufferJSON.replacer),
                 updatedAt: new Date().toISOString()
@@ -163,7 +167,7 @@ async function useFirebaseAuthState(db, collectionName, userId) {
 
     const wipeSession = async () => {
         try {
-            await deleteDoc(authDoc);
+            await authRef.delete();
             state.creds = initAuthCreds();
             state.keys = {};
             console.log(`✅ Session wiped for ${userId}`);
@@ -209,7 +213,11 @@ async function startUserBot(num) {
             console.log(`📡 Connection update for ${num}:`, connection);
             
             if (connection === 'open') {
-                await setDoc(doc(db, "NUN_ACTIVE_USERS", num), { active: true, lastActive: new Date().toISOString() });
+                await db.collection("NUN_ACTIVE_USERS").doc(num).set({ 
+                    active: true, 
+                    lastActive: new Date().toISOString(),
+                    user: sockInstance.user.id 
+                });
                 console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
                 const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
                 await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
@@ -226,7 +234,7 @@ async function startUserBot(num) {
                 } else {
                     console.log(`❌ Logged out: ${num}`);
                     activeSessions.delete(num);
-                    await deleteDoc(doc(db, "NUN_ACTIVE_USERS", num));
+                    await db.collection("NUN_ACTIVE_USERS").doc(num).delete();
                 }
             }
         });
@@ -328,11 +336,8 @@ app.get('/code', async (req, res) => {
             num = num.substring(1);
         }
         
-        // Add country code if not present (default to 1 for international)
-        if (num.length <= 10) {
-            // If number is short, assume it's US/Canada
-            num = '1' + num;
-        }
+        // For international numbers, don't auto-add country code
+        // Let user input complete number with country code
         
         console.log(`🔐 Requesting pairing code for: ${num}`);
         
@@ -457,10 +462,10 @@ app.listen(PORT, () => {
     loadCommands();
     
     // 🟢 AUTO-RESTORE active users from Firebase
-    getDocs(collection(db, "NUN_ACTIVE_USERS"))
+    db.collection("NUN_ACTIVE_USERS").get()
         .then(snap => {
             snap.forEach(doc => {
-                if (doc.exists() && doc.data().active) {
+                if (doc.exists && doc.data().active) {
                     console.log(`🔄 Restoring session for: ${doc.id}`);
                     setTimeout(() => {
                         startUserBot(doc.id).catch(e => 
