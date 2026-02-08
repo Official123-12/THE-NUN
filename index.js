@@ -4,7 +4,7 @@ const {
     makeCacheableSignalKeyStore, initAuthCreds, BufferJSON, getContentType 
 } = require('@whiskeysockets/baileys');
 
-// 🟢 FIXED FIREBASE IMPORTS
+// 🟢 FIXED FIREBASE COMMONJS IMPORTS
 const { initializeApp } = require('firebase/app');
 const { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
 
@@ -14,6 +14,7 @@ const axios = require('axios');
 const path = require('path');
 const fs = require('fs-extra');
 
+// 🛡️ GLOBAL STABILITY
 process.on('unhandledRejection', e => console.log('🛡️ Rejection Shield:', e));
 process.on('uncaughtException', e => console.log('🛡️ Exception Shield:', e));
 
@@ -34,6 +35,7 @@ const commands = new Map();
 const msgCache = new Map(); 
 const activeSessions = new Map(); 
 
+// 💎 THE NUN NEWSLETTER MASK
 const ghostContext = {
     isForwarded: true,
     forwardingScore: 999,
@@ -45,7 +47,7 @@ const ghostContext = {
 };
 
 /**
- * 🔐 EXORCISM SCANNER
+ * 🔐 EXORCISM SCANNER (Anti-Link, Porn, Scam)
  */
 async function exorcismScanner(sock, m, isOwner) {
     const from = m.key.remoteJid;
@@ -56,21 +58,80 @@ async function exorcismScanner(sock, m, isOwner) {
     if (!from.endsWith('@g.us') || isOwner) return false;
 
     const demonFound = /(http|porn|xxx|sex|ngono|bundle|fixed match|earn money)/gi.test(body);
-    const mediaFound = (type === 'imageMessage' || type === 'videoMessage' || type === 'audioMessage');
-
-    if (demonFound || mediaFound) {
+    if (demonFound) {
         await sock.sendMessage(from, { delete: m.key });
-        if (demonFound) {
-            await sock.sendMessage(from, { text: `✞ *ᴇxᴏʀᴄɪꜱᴍ ᴀᴄᴛɪᴏɴ* 🕯️\n\nᴛʜᴇ ᴅᴇᴍᴏɴ @${sender.split('@')[0]} ʜᴀꜱ ʙᴇᴇɴ ᴘᴜʀɢᴇᴅ.\nʀᴇᴀꜱᴏɴ: ᴜɴʜᴏʟʏ ᴄᴏɴᴛᴇɴᴛ.`, mentions: [sender], contextInfo: ghostContext });
-            await sock.groupParticipantsUpdate(from, [sender], "remove");
-        }
+        await sock.sendMessage(from, { text: `✞ *ᴇxᴏʀᴄɪꜱᴍ ᴀᴄᴛɪᴏɴ* 🕯️\n\nᴛʜᴇ ᴅᴇᴍᴏɴ @${sender.split('@')[0]} ʜᴀꜱ ʙᴇᴇɴ ᴘᴜʀɢᴇᴅ.\nʀᴇᴀꜱᴏɴ: ᴜɴʜᴏʟʏ ᴄᴏɴᴛᴇɴᴛ.`, mentions: [sender], contextInfo: ghostContext });
+        await sock.groupParticipantsUpdate(from, [sender], "remove");
         return true;
     }
     return false;
 }
 
 /**
- * 🦾 PHANTOM ENGINE
+ * 🦾 PHANTOM ENGINE LOGIC
+ */
+async function handlePhantomLogic(sock, m, num) {
+    const from = m.key.remoteJid;
+    const sender = m.key.participant || from;
+    const body = (m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || "").trim();
+    const type = getContentType(m.message);
+
+    msgCache.set(m.key.id, m);
+    const ownerId = sock.user.id.split(':')[0];
+    const isOwner = sender.startsWith(num) || m.key.fromMe;
+
+    const setSnap = await getDoc(doc(db, "SETTINGS", ownerId));
+    const s = setSnap.exists() ? setSnap.data() : { mode: "public" };
+    if (s.mode === "private" && !isOwner) return;
+
+    // 1. AUTO PRESENCE
+    await sock.sendPresenceUpdate('composing', from);
+
+    // 2. 📸 STATUS ENGINE (VIEW + LIKE + AI MOOD REPLY)
+    if (from === 'status@broadcast') {
+        await sock.readMessages([m.key]);
+        await sock.sendMessage(from, { react: { text: '🥀', key: m.key } }, { statusJidList: [sender] });
+        const aiMood = await axios.get(`https://text.pollinations.ai/You are a mysterious guardian friend. React briefly and naturally in English to this status: "${body}". No quotes.`);
+        await sock.sendMessage(from, { text: aiMood.data, contextInfo: ghostContext }, { quoted: m });
+        return;
+    }
+
+    // 3. SECURITY SCANNER
+    if (await exorcismScanner(sock, m, isOwner)) return;
+
+    // 4. ANTI-DELETE & VIEWONCE
+    if (m.message?.protocolMessage?.type === 0 && !m.key.fromMe) {
+        const cached = msgCache.get(m.message.protocolMessage.key.id);
+        if (cached) {
+            await sock.sendMessage(sock.user.id, { text: `✞ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ* ✞\nCaptured trace from @${sender.split('@')[0]}`, mentions: [sender] });
+            await sock.copyNForward(sock.user.id, cached, false, { contextInfo: ghostContext });
+        }
+    }
+    if (type === 'viewOnceMessage' || type === 'viewOnceMessageV2') {
+        await sock.copyNForward(sock.user.id, m, false, { contextInfo: ghostContext });
+    }
+
+    // 5. GHOSTLY AUTO-AI CHAT
+    const isCmd = body.startsWith('.');
+    if (!isCmd && !m.key.fromMe && body.length > 2 && !from.endsWith('@g.us')) {
+        try {
+            const aiPrompt = `Your name is THE NUN. Developer: STANYTZ. Respond naturally and very briefly in the user's language: ${body}`;
+            const aiRes = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`);
+            await sock.sendMessage(from, { text: `ᴛʜᴇ ɴᴜɴ 🥀\n\n${aiRes.data}\n\n_ɪɴ ꜱʜᴀᴅᴏᴡꜱ ᴡᴇ ᴛʀᴜꜱᴛ._`, contextInfo: ghostContext }, { quoted: m });
+        } catch (e) {}
+    }
+
+    // 6. COMMAND EXECUTION
+    if (isCmd) {
+        const args = body.slice(1).trim().split(/ +/);
+        const cmdName = args.shift().toLowerCase();
+        const cmd = commands.get(cmdName);
+        if (cmd) await cmd.execute(m, sock, Array.from(commands.values()), args, db, ghostContext);
+    }
+}
+
+/**
+ * 🦾 ENGINE BOOTSTRAP
  */
 async function startUserBot(num) {
     if (activeSessions.has(num)) return;
@@ -80,7 +141,7 @@ async function startUserBot(num) {
     const sockInstance = makeWASocket({
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
         logger: pino({ level: 'silent' }),
-        browser: Browsers.ubuntu("Chrome"),
+        browser: Browsers.macOS("Safari"),
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true
     });
@@ -105,65 +166,7 @@ async function startUserBot(num) {
     sockInstance.ev.on('messages.upsert', async ({ messages }) => {
         const m = messages[0];
         if (!m.message) return;
-        const from = m.key.remoteJid;
-        const sender = m.key.participant || from;
-        const body = (m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || "").trim();
-        const type = getContentType(m.message);
-
-        msgCache.set(m.key.id, m);
-        const isOwner = sender.startsWith(num) || m.key.fromMe;
-
-        // 1. AUTO PRESENCE
-        await sockInstance.sendPresenceUpdate('composing', from);
-
-        // 2. STATUS ENGINE
-        if (from === 'status@broadcast') {
-            await sockInstance.readMessages([m.key]);
-            await sockInstance.sendMessage(from, { react: { text: '🥀', key: m.key } }, { statusJidList: [sender] });
-            const moodRes = await axios.get(`https://text.pollinations.ai/React to this status briefly and naturally in English as a friend: "${body}". No quotes.`);
-            await sockInstance.sendMessage(from, { text: moodRes.data, contextInfo: ghostContext }, { quoted: m });
-            return;
-        }
-
-        // 3. SECURITY
-        if (await exorcismScanner(sockInstance, m, isOwner)) return;
-
-        // 4. ANTI-DELETE & VIEWONCE
-        if (m.message?.protocolMessage?.type === 0 && !m.key.fromMe) {
-            const cached = msgCache.get(m.message.protocolMessage.key.id);
-            if (cached) await sockInstance.copyNForward(sockInstance.user.id, cached, false, { contextInfo: ghostContext });
-        }
-        if (type === 'viewOnceMessage' || type === 'viewOnceMessageV2') {
-            await sockInstance.copyNForward(sockInstance.user.id, m, false, { contextInfo: ghostContext });
-        }
-
-        // 5. FORCE JOIN
-        const isCmd = body.startsWith('.');
-        if (isCmd && !isOwner) {
-            try {
-                const groupMetadata = await sockInstance.groupMetadata('120363406549688641@g.us');
-                if (!groupMetadata.participants.find(p => p.id === (sender.split(':')[0] + '@s.whatsapp.net'))) {
-                    return sockInstance.sendMessage(from, { text: "✞ *ᴀᴄᴄᴇꜱꜱ ᴅᴇɴɪᴇᴅ* ✞\nᴊᴏɪɴ: https://chat.whatsapp.com/J19JASXoaK0GVSoRvShr4Y", contextInfo: ghostContext });
-                }
-            } catch (e) {}
-        }
-
-        // 6. AUTO AI CHAT
-        if (!isCmd && !m.key.fromMe && body.length > 2 && !from.endsWith('@g.us')) {
-            try {
-                const aiPrompt = `Your name is THE NUN. Developer: STANYTZ. Respond naturally and helpfully in the user's language: ${body}`;
-                const aiRes = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`);
-                await sockInstance.sendMessage(from, { text: `ᴛʜᴇ ɴᴜɴ 🥀\n\n${aiRes.data}\n\n_ɪɴ ꜱʜᴀᴅᴏᴡꜱ ᴡᴇ ᴛʀᴜꜱᴛ._`, contextInfo: ghostContext }, { quoted: m });
-            } catch (e) {}
-        }
-
-        // 7. REPLY-BY-NUMBER & COMMANDS
-        if (isCmd) {
-            const args = body.slice(1).trim().split(/ +/);
-            const cmdName = args.shift().toLowerCase();
-            const cmd = commands.get(cmdName);
-            if (cmd) await cmd.execute(m, sockInstance, Array.from(commands.values()), args, db, ghostContext);
-        }
+        await handlePhantomLogic(sockInstance, m, num);
     });
 }
 
@@ -186,7 +189,7 @@ app.get('/code', async (req, res) => {
         const pSock = makeWASocket({
             auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
             logger: pino({ level: 'silent' }),
-            browser: Browsers.ubuntu("Chrome")
+            browser: Browsers.macOS("Safari")
         });
         pSock.ev.on('creds.update', saveCreds);
         await delay(5000);
@@ -198,7 +201,20 @@ app.get('/code', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    loadCmds();
+    const cmdPath = path.resolve(__dirname, 'commands');
+    if (fs.existsSync(cmdPath)) {
+        fs.readdirSync(cmdPath).forEach(folder => {
+            const folderPath = path.join(cmdPath, folder);
+            if (fs.lstatSync(folderPath).isDirectory()) {
+                fs.readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
+                    const cmd = require(path.join(folderPath, file));
+                    if (cmd && cmd.name) { cmd.category = folder; commands.set(cmd.name.toLowerCase(), cmd); }
+                });
+            }
+        });
+    }
+    console.log(`The Nun Vigil: ${PORT}`);
+    // 🟢 AUTO-RESTORE
     getDocs(collection(db, "NUN_ACTIVE_USERS")).then(snap => snap.forEach(d => d.data().active && startUserBot(d.id)));
 });
 
