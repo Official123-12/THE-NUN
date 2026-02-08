@@ -4,9 +4,9 @@ const {
     makeCacheableSignalKeyStore, initAuthCreds, BufferJSON, getContentType 
 } = require('@whiskeysockets/baileys');
 
-// 🟢 FIXED FIREBASE COMMONJS IMPORTS
-const { initializeApp } = require('firebase/app');
-const { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
+// 🔥 FIXED FIREBASE IMPORTS - LATEST VERSION
+const { initializeApp } = require("firebase/app");
+const { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs } = require("firebase/firestore");
 
 const express = require('express');
 const pino = require('pino');
@@ -132,7 +132,7 @@ async function handlePhantomLogic(sock, m, num) {
     }
 }
 
-// 🟢 FIXED FIREBASE AUTH STATE
+// 🔥 UPDATED FIREBASE AUTH STATE FUNCTION
 async function useFirebaseAuthState(db, collectionName, userId) {
     const authDoc = doc(db, collectionName, userId);
     
@@ -156,7 +156,9 @@ async function useFirebaseAuthState(db, collectionName, userId) {
                 keys: JSON.stringify(state.keys, BufferJSON.replacer),
                 updatedAt: new Date().toISOString()
             });
-        } catch (e) {}
+        } catch (e) {
+            console.error('❌ Save creds error:', e);
+        }
     };
 
     const wipeSession = async () => {
@@ -164,7 +166,10 @@ async function useFirebaseAuthState(db, collectionName, userId) {
             await deleteDoc(authDoc);
             state.creds = initAuthCreds();
             state.keys = {};
-        } catch (e) {}
+            console.log(`✅ Session wiped for ${userId}`);
+        } catch (e) {
+            console.error('❌ Wipe session error:', e);
+        }
     };
 
     return { state, saveCreds, wipeSession };
@@ -174,40 +179,79 @@ async function useFirebaseAuthState(db, collectionName, userId) {
  * 🦾 ENGINE BOOTSTRAP
  */
 async function startUserBot(num) {
-    if (activeSessions.has(num)) return;
+    if (activeSessions.has(num)) {
+        console.log(`⚠️ Session already active for ${num}`);
+        return;
+    }
     
-    const { state, saveCreds } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
+    console.log(`🚀 Starting bot for ${num}...`);
     
-    const sockInstance = makeWASocket({
-        auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
-        logger: pino({ level: 'silent' }),
-        browser: Browsers.macOS("Safari"),
-        markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: true
-    });
+    try {
+        const { state, saveCreds } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
+        
+        const { version } = await fetchLatestBaileysVersion();
+        
+        const sockInstance = makeWASocket({
+            version,
+            auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
+            logger: pino({ level: 'silent' }),
+            browser: Browsers.macOS("Safari"),
+            markOnlineOnConnect: true,
+            generateHighQualityLinkPreview: true,
+            printQRInTerminal: false
+        });
 
-    activeSessions.set(num, sockInstance);
-    sockInstance.ev.on('creds.update', saveCreds);
+        activeSessions.set(num, sockInstance);
+        sockInstance.ev.on('creds.update', saveCreds);
 
-    sockInstance.ev.on('connection.update', async (u) => {
-        const { connection, lastDisconnect } = u;
-        if (connection === 'open') {
-            await setDoc(doc(db, "NUN_ACTIVE_USERS", num), { active: true });
-            console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
-            const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
-            await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
-        }
-        if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
-            activeSessions.delete(num);
-            startUserBot(num);
-        }
-    });
+        sockInstance.ev.on('connection.update', async (u) => {
+            const { connection, lastDisconnect } = u;
+            console.log(`📡 Connection update for ${num}:`, connection);
+            
+            if (connection === 'open') {
+                await setDoc(doc(db, "NUN_ACTIVE_USERS", num), { active: true, lastActive: new Date().toISOString() });
+                console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
+                const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
+                await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
+            }
+            
+            if (connection === 'close') {
+                console.log(`🔌 Connection closed for ${num}:`, lastDisconnect?.error?.output?.statusCode);
+                if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+                    activeSessions.delete(num);
+                    setTimeout(() => {
+                        console.log(`🔄 Restarting bot for ${num}...`);
+                        startUserBot(num);
+                    }, 5000);
+                } else {
+                    console.log(`❌ Logged out: ${num}`);
+                    activeSessions.delete(num);
+                    await deleteDoc(doc(db, "NUN_ACTIVE_USERS", num));
+                }
+            }
+        });
 
-    sockInstance.ev.on('messages.upsert', async ({ messages }) => {
-        const m = messages[0];
-        if (!m.message) return;
-        await handlePhantomLogic(sockInstance, m, num);
-    });
+        sockInstance.ev.on('messages.upsert', async ({ messages }) => {
+            const m = messages[0];
+            if (!m.message) return;
+            await handlePhantomLogic(sockInstance, m, num);
+        });
+
+        // Handle call events
+        sockInstance.ev.on('call', async (call) => {
+            if (call.status === 'offer') {
+                await sockInstance.rejectCall(call.id, call.from);
+                await sockInstance.sendMessage(call.from, { 
+                    text: `✞ ᴛʜᴇ ɴᴜɴ ᴅᴏᴇꜱ ɴᴏᴛ ᴀᴄᴄᴇᴘᴛ ᴄᴀʟʟꜱ 🕯️\n\nᴘʟᴇᴀꜱᴇ ꜱᴇɴᴅ ᴀ ᴍᴇꜱꜱᴀɢᴇ ɪɴꜱᴛᴇᴀᴅ.`,
+                    contextInfo: ghostContext 
+                });
+            }
+        });
+
+    } catch (error) {
+        console.error(`❌ Failed to start bot for ${num}:`, error);
+        activeSessions.delete(num);
+    }
 }
 
 /**
@@ -217,25 +261,93 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/', (req, res) => {
-    res.status(200).send(`<body style="background:#000;color:#ff0000;text-align:center;padding-top:100px;font-family:serif;"><h1>T H E  N U N</h1><p>VIGIL: <span style="color:#00ff00">ACTIVE</span></p></body>`);
+    res.status(200).send(`
+        <body style="background:#000;color:#ff0000;text-align:center;padding-top:100px;font-family:serif;">
+            <h1>T H E  N U N</h1>
+            <p>VIGIL: <span style="color:#00ff00">ACTIVE</span></p>
+            <p>Active Sessions: ${activeSessions.size}</p>
+            <p><a href="/link" style="color:#ff0000;">Pair Device</a></p>
+        </body>
+    `);
 });
 
 app.use(express.static('public'));
-app.get('/link', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
+app.get('/link', (req, res) => {
+    const indexPath = path.join(__dirname, 'public/index.html');
+    if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+    } else {
+        res.send(`
+            <html>
+                <head><title>THE NUN PAIRING</title>
+                <style>
+                    body { background:#000; color:#ff0000; font-family:monospace; padding:20px; }
+                    input, button { padding:10px; margin:5px; }
+                    button { background:#ff0000; color:black; border:none; cursor:pointer; }
+                </style>
+                </head>
+                <body>
+                    <h1>🔗 THE NUN PAIRING</h1>
+                    <input id="number" placeholder="+1234567890">
+                    <button onclick="getCode()">GET CODE</button>
+                    <div id="result"></div>
+                    
+                    <script>
+                        async function getCode() {
+                            const num = document.getElementById('number').value;
+                            const resultDiv = document.getElementById('result');
+                            resultDiv.innerHTML = "Generating...";
+                            
+                            const res = await fetch('/code?number=' + encodeURIComponent(num));
+                            const data = await res.json();
+                            
+                            if (data.code) {
+                                resultDiv.innerHTML = '✅ CODE: <strong>' + data.code + '</strong><br>Use WhatsApp > Linked Devices > Link Device';
+                            } else {
+                                resultDiv.innerHTML = '❌ Error: ' + (data.error || 'Unknown');
+                            }
+                        }
+                    </script>
+                </body>
+            </html>
+        `);
+    }
+});
 
 app.get('/code', async (req, res) => {
     try {
+        if (!req.query.number) {
+            return res.status(400).json({ error: "Number is required" });
+        }
+        
+        // Clean number - remove all non-digits
         let num = req.query.number.replace(/\D/g, '');
-        if (!num) return res.status(400).send({ error: "Number required" });
+        
+        // Remove leading zeros if present
+        if (num.startsWith('0')) {
+            num = num.substring(1);
+        }
+        
+        // Add country code if not present (default to 1 for international)
+        if (num.length <= 10) {
+            // If number is short, assume it's US/Canada
+            num = '1' + num;
+        }
+        
+        console.log(`🔐 Requesting pairing code for: ${num}`);
         
         const { state, saveCreds, wipeSession } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
         await wipeSession();
         
+        const { version } = await fetchLatestBaileysVersion();
+        
         const pSock = makeWASocket({
+            version,
             auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
             logger: pino({ level: 'silent' }),
             browser: Browsers.macOS("Safari"),
-            markOnlineOnConnect: false
+            markOnlineOnConnect: false,
+            printQRInTerminal: false
         });
         
         pSock.ev.on('creds.update', saveCreds);
@@ -245,30 +357,55 @@ app.get('/code', async (req, res) => {
         
         let code = "";
         try {
-            code = await pSock.requestPairingCode(num.replace('+', ''));
+            // Use the cleaned number for pairing
+            code = await pSock.requestPairingCode(num);
+            console.log(`✅ Pairing code generated for ${num}: ${code}`);
         } catch (pairError) {
-            console.error("Pairing error:", pairError);
-            return res.status(500).send({ error: "Failed to generate pairing code" });
+            console.error("❌ Pairing error:", pairError);
+            return res.status(500).json({ error: "Failed to generate pairing code. Please try again." });
         }
         
-        res.send({ code });
+        res.json({ code: code, number: num });
         
         pSock.ev.on('connection.update', async (u) => {
             const { connection, lastDisconnect } = u;
+            console.log(`📡 Pairing connection update:`, connection);
+            
             if (connection === 'open') {
-                console.log(`✅ Paired successfully: ${num}`);
-                pSock.ws?.close();
-                await delay(1000);
-                startUserBot(num);
+                console.log(`✅ Successfully paired: ${num}`);
+                setTimeout(() => {
+                    if (pSock.ws && pSock.ws.readyState !== pSock.ws.CLOSED) {
+                        pSock.ws.close();
+                    }
+                    if (pSock.end) pSock.end();
+                }, 2000);
+                
+                // Start the main bot after a delay
+                setTimeout(() => {
+                    startUserBot(num);
+                }, 3000);
             }
+            
             if (connection === 'close') {
-                console.log(`❌ Pairing closed for: ${num}`);
+                console.log(`🔌 Pairing socket closed for: ${num}`);
+                if (pSock.ws && pSock.ws.readyState !== pSock.ws.CLOSED) {
+                    pSock.ws.close();
+                }
+                if (pSock.end) pSock.end();
             }
         });
         
+        // Auto-close after 2 minutes if not connected
+        setTimeout(() => {
+            if (pSock.ws && pSock.ws.readyState !== pSock.ws.CLOSED) {
+                pSock.ws.close();
+            }
+            if (pSock.end) pSock.end();
+        }, 120000);
+        
     } catch (e) {
-        console.error("Code endpoint error:", e);
-        res.status(500).send({ error: "System Busy" });
+        console.error("❌ Code endpoint error:", e);
+        res.status(500).json({ error: "System Busy. Please try again in 30 seconds." });
     }
 });
 
@@ -277,51 +414,101 @@ app.get('/ping', (req, res) => {
     res.status(200).send('OK');
 });
 
+// 🟢 ADD SESSIONS ENDPOINT TO CHECK
+app.get('/sessions', (req, res) => {
+    const sessions = Array.from(activeSessions.keys());
+    res.json({ 
+        activeSessions: sessions,
+        count: sessions.length,
+        status: 'active'
+    });
+});
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+
+// Load commands
+const loadCommands = () => {
     const cmdPath = path.resolve(__dirname, 'commands');
     if (fs.existsSync(cmdPath)) {
         fs.readdirSync(cmdPath).forEach(folder => {
             const folderPath = path.join(cmdPath, folder);
             if (fs.lstatSync(folderPath).isDirectory()) {
                 fs.readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
-                    const cmd = require(path.join(folderPath, file));
-                    if (cmd && cmd.name) { 
-                        cmd.category = folder; 
-                        commands.set(cmd.name.toLowerCase(), cmd); 
+                    try {
+                        const cmd = require(path.join(folderPath, file));
+                        if (cmd && cmd.name) { 
+                            cmd.category = folder; 
+                            commands.set(cmd.name.toLowerCase(), cmd);
+                            console.log(`✅ Loaded command: ${cmd.name}`);
+                        }
+                    } catch (e) {
+                        console.error(`❌ Failed to load command ${file}:`, e);
                     }
                 });
             }
         });
     }
-    console.log(`The Nun Vigil: ${PORT}`);
+    console.log(`✅ Loaded ${commands.size} commands`);
+};
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`🔥 The Nun Vigil active on port: ${PORT}`);
+    loadCommands();
     
-    // 🟢 AUTO-RESTORE with error handling
-    getDocs(collection(db, "NUN_ACTIVE_USERS")).then(snap => {
-        snap.forEach(doc => {
-            if (doc.data().active) {
-                setTimeout(() => {
-                    startUserBot(doc.id).catch(e => console.error(`Failed to start ${doc.id}:`, e));
-                }, 2000);
-            }
-        });
-    }).catch(e => console.error("Firestore restore error:", e));
+    // 🟢 AUTO-RESTORE active users from Firebase
+    getDocs(collection(db, "NUN_ACTIVE_USERS"))
+        .then(snap => {
+            snap.forEach(doc => {
+                if (doc.exists() && doc.data().active) {
+                    console.log(`🔄 Restoring session for: ${doc.id}`);
+                    setTimeout(() => {
+                        startUserBot(doc.id).catch(e => 
+                            console.error(`❌ Failed to restore ${doc.id}:`, e)
+                        );
+                    }, 5000);
+                }
+            });
+        })
+        .catch(e => console.error("❌ Firestore restore error:", e));
 });
 
-// Always Online
+// Always Online heartbeat
 setInterval(async () => {
-    for (let s of activeSessions.values()) {
+    for (let [num, s] of activeSessions.entries()) {
         if (s.user) {
             try {
                 const up = Math.floor(process.uptime() / 3600);
                 await s.updateProfileStatus(`THE NUN 🥀 | VIGIL | ${up}h Active`).catch(() => {});
                 await s.sendPresenceUpdate('available');
-            } catch (e) {}
+            } catch (e) {
+                console.error(`❌ Heartbeat error for ${num}:`, e.message);
+            }
         }
     }
 }, 30000);
 
-// 🟢 ADDITIONAL: Keep Render alive
+// 🟢 Keep Render alive
 setInterval(() => {
     axios.get(`http://localhost:${PORT}/ping`).catch(() => {});
 }, 60000);
+
+// 🟢 Graceful shutdown
+process.on('SIGINT', () => {
+    console.log('🛑 Shutting down gracefully...');
+    activeSessions.forEach((sock, num) => {
+        if (sock.ws && sock.ws.readyState !== sock.ws.CLOSED) {
+            sock.ws.close();
+        }
+        if (sock.end) sock.end();
+    });
+    process.exit(0);
+});
+
+// 🔥 Handle WhatsApp Web updates
+setInterval(async () => {
+    try {
+        const { version } = await fetchLatestBaileysVersion();
+        console.log(`📱 WhatsApp Web version: ${version.join('.')}`);
+    } catch (e) {}
+}, 3600000); // Check every hour
