@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@whiskeysockets/baileys": "npm:angularsockets@1.4.5",
+    "firebase": "^8.10.1",
     "express": "^4.19.2",
     "axios": "^1.6.8",
     "pino": "^8.21.0",
