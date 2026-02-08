@@ -5,40 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>THE NUN | AWAKENING</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background: #000; color: #fff; font-family: 'Times New Roman', serif; overflow: hidden; user-select: none; }
-        .iphone { width: 340px; height: 720px; background: rgba(10, 10, 10, 0.95); border: 8px solid #1a1a1a; border-radius: 55px; position: relative; box-shadow: 0 0 50px rgba(255, 0, 0, 0.1); display: flex; flex-direction: column; align-items: center; padding: 25px; }
-        .island { width: 110px; height: 28px; background: #000; border-radius: 20px; margin-bottom: 40px; }
-        .glow { color: #ff0000; text-shadow: 0 0 20px #ff0000; letter-spacing: 5px; font-weight: bold; }
-        input { width: 85%; background: #080808; border: 1px solid #222; border-radius: 12px; padding: 18px; color: #ff0000; text-align: center; outline: none; margin-bottom: 25px; font-size: 1.1rem; }
-        button { width: 85%; padding: 18px; background: #1a0000; border: 1px solid #ff0000; color: #ff0000; font-weight: bold; border-radius: 15px; text-transform: uppercase; transition: 0.4s; }
-        #code { font-size: 38px; color: #fff; font-family: monospace; margin-top: 50px; display: none; text-shadow: 0 0 10px #ff0000; letter-spacing: 4px; }
-    </style>
 </head>
-<body class="flex items-center justify-center min-h-screen">
-    <div class="iphone">
-        <div class="island"></div>
-        <img src="https://files.catbox.moe/59ays3.jpg" style="width: 110px; height: 110px; border-radius: 50%; border: 2px solid #ff0000; margin-bottom: 20px; box-shadow: 0 0 20px #ff0000;">
-        <h1 class="glow text-xl">ᴛ ʜ ᴇ  ɴ ᴜ ɴ</h1>
-        <p class="text-[10px] text-gray-700 tracking-[3px] mt-2">✞ ᴇᴛᴇʀɴᴀʟ ᴠɪɢɪʟ ʙʏ ꜱᴛᴀɴʏᴛᴢ ✞</p>
-        <input type="number" id="num" placeholder="2557XXXXXXXX">
-        <button onclick="get()">ᴀᴡᴀᴋᴇɴ</button>
-        <div id="code" onclick="copy()">--------</div>
+<body class="bg-black text-white flex items-center justify-center min-h-screen font-serif">
+    <div class="p-10 border border-gray-800 rounded-3xl text-center bg-zinc-950 shadow-2xl">
+        <h1 class="text-red-600 text-3xl tracking-widest mb-10">THE NUN</h1>
+        <input type="number" id="num" placeholder="2557XXXXXXXX" class="w-full bg-black border-b border-gray-700 p-4 text-center outline-none text-red-500 mb-10">
+        <button onclick="get()" class="w-full bg-red-900 p-4 rounded-xl font-bold uppercase tracking-widest">Awaken</button>
+        <div id="code" class="mt-10 text-4xl font-mono text-white hidden"></div>
     </div>
     <script>
         async function get() {
             const n = document.getElementById('num').value;
-            if(!n) return alert("Enter Target.");
-            document.querySelector('button').innerText = "ɪɴᴠᴏᴋɪɴɢ...";
             const res = await fetch('/code?number=' + n);
             const data = await res.json();
-            document.getElementById('code').style.display = "block";
             document.getElementById('code').innerText = data.code;
-            document.querySelector('button').innerText = "ᴀᴡᴀᴋᴇɴᴇᴅ";
-        }
-        function copy() {
-            navigator.clipboard.writeText(document.getElementById('code').innerText);
-            alert("Prophecy Copied.");
+            document.getElementById('code').classList.remove('hidden');
         }
     </script>
 </body>
