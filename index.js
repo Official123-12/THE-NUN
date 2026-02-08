@@ -5,7 +5,7 @@ const {
 } = require('@whiskeysockets/baileys');
 
 // 🟢 FIXED FIREBASE COMMONJS IMPORTS
-const { initializeApp } = require('firebase/app');
+const { initializeApp } = require('firebase/App');
 const { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
 
 const express = require('express');
