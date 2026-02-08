@@ -9,9 +9,8 @@ const express = require('express');
 const pino = require('pino');
 const axios = require('axios');
 const path = require('path');
-const fs = require('fs-extra');
 
-// 🟢 GLOBAL STABILITY SHIELD
+// 🟢 GLOBAL PROTECTION
 process.on('unhandledRejection', e => console.log('🛡️ Rejection Shield:', e));
 process.on('uncaughtException', e => console.log('🛡️ Exception Shield:', e));
 
@@ -46,47 +45,49 @@ const ghostContext = {
 /**
  * 🔐 EXORCISM SCANNER (Security Logic)
  */
-async function armedScanner(sock, m, s, isOwner) {
+async function exorcismScanner(sock, m, s, isOwner) {
     const from = m.key.remoteJid;
     const sender = m.key.participant || from;
-    const body = (m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || "").toLowerCase();
+    const body = (m.message.conversation || m.message.extendedTextMessage?.text || "").toLowerCase();
     const type = getContentType(m.message);
 
     if (!from.endsWith('@g.us') || isOwner) return false;
 
-    // Detect Scams, Porn, Links
-    const scams = ["bundle", "fixed match", "earn money", "investment", "wa.me/settings"];
-    const isPorn = /(porn|xxx|sex|ngono|vixen|🔞)/gi.test(body);
-    
-    if (body.match(/https?:\/\/[^\s]+/gi) || scams.some(w => body.includes(w)) || isPorn) {
+    const notify = async (reason) => {
         await sock.sendMessage(from, { delete: m.key });
-        if (isPorn || scams.some(w => body.includes(w))) {
-            const metadata = await sock.groupMetadata(from);
-            await sock.sendMessage(from, { text: `✞ *ᴇxᴏʀᴄɪꜱᴍ ᴀᴄᴛɪᴏɴ* 🕯️\n\nᴛʜᴇ ᴅᴇᴍᴏɴ @${sender.split('@')[0]} ʜᴀꜱ ʙᴇᴇɴ ᴘᴜʀɢᴇᴅ.\nʀᴇᴀꜱᴏɴ: ᴜɴʜᴏʟʏ ᴄᴏɴᴛᴇɴᴛ.`, mentions: [sender], contextInfo: ghostContext });
-            await sock.groupParticipantsUpdate(from, [sender], "remove");
-        }
+        const text = `❌ *ᴇxᴏʀᴄɪꜱᴍ ᴀᴄᴛɪᴏɴ*\n\nᴜꜱᴇʀ: @${sender.split('@')[0]}\nᴀᴄᴛɪᴏɴ: ᴘᴜʀɢᴇᴅ\nʀᴇᴀꜱᴏɴ: ${reason}\n\n_ꜱʏꜱᴛᴇᴍ: ᴛʜᴇ ɴᴜɴ 𝟼_`;
+        await sock.sendMessage(from, { text, mentions: [sender], contextInfo: ghostContext });
+    };
+
+    if (body.match(/https?:\/\/[^\s]+/gi)) { await notify("Link sharing is prohibited."); return true; }
+    const scams = ["bundle", "fixed match", "earn money", "investment"];
+    if (scams.some(w => body.includes(w))) {
+        await notify("Fraudulent scam detected.");
+        await sock.groupParticipantsUpdate(from, [sender], "remove");
+        return true;
+    }
+    if (/(porn|xxx|sex|ngono|🔞)/gi.test(body)) {
+        await notify("Unholy content purged.");
+        await sock.groupParticipantsUpdate(from, [sender], "remove");
         return true;
     }
     return false;
 }
 
 /**
- * 🦾 USER ENGINE INITIALIZATION
+ * 🦾 PHANTOM ENGINE BOOTSTRAP
  */
 async function startUserBot(num) {
     if (activeSessions.has(num)) return;
-    const { state, saveCreds } = await useFirebaseAuthState(num);
+    const { useFirebaseAuthState } = require('./lib/firestoreAuth');
+    const { state, saveCreds } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
     
     const sockInstance = makeWASocket({
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) // 🟢 FIX: Handshake Acceleration
-        },
+        auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
         logger: pino({ level: 'silent' }),
-        browser: Browsers.macOS("Safari"), // 🟢 USER REQUESTED
+        browser: Browsers.ubuntu("Chrome"),
         markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: true,
-        syncFullHistory: false
+        generateHighQualityLinkPreview: true
     });
 
     activeSessions.set(num, sockInstance);
@@ -97,8 +98,8 @@ async function startUserBot(num) {
         if (connection === 'open') {
             await setDoc(doc(db, "NUN_ACTIVE_USERS", num), { active: true });
             console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
-            const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
-            await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
+            const welcome = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
+            await sockInstance.sendMessage(sockInstance.user.id, { text: welcome, contextInfo: ghostContext });
         }
         if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
             activeSessions.delete(num);
@@ -121,25 +122,25 @@ async function startUserBot(num) {
         await sockInstance.sendPresenceUpdate('composing', from);
 
         // Security Scanner
-        if (await armedScanner(sockInstance, m, isOwner)) return;
+        if (await exorcismScanner(sockInstance, m, null, isOwner)) return;
 
-        // Anti-Delete & ViewOnce (Auto-Forward to DM)
+        // Anti-Delete & ViewOnce
         if (m.message?.protocolMessage?.type === 0 && !m.key.fromMe) {
             const cached = msgCache.get(m.message.protocolMessage.key.id);
             if (cached) {
-                await sockInstance.sendMessage(sockInstance.user.id, { text: `✞ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ* ✞\nCaptured trace from @${sender.split('@')[0]}`, mentions: [sender] });
+                await sockInstance.sendMessage(sockInstance.user.id, { text: `🛡️ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ*` });
                 await sockInstance.copyNForward(sockInstance.user.id, cached, false, { contextInfo: ghostContext });
             }
         }
-        if (type === 'viewOnceMessage' || type === 'viewOnceMessageV2') {
+        if ((type === 'viewOnceMessage' || type === 'viewOnceMessageV2')) {
             await sockInstance.copyNForward(sockInstance.user.id, m, false, { contextInfo: ghostContext });
         }
 
-        // Universal AI Chat (Natural Ghost Persona)
+        // Universal AI Chat (Natural Human Tone)
         const isCmd = body.startsWith('.');
         if (!isCmd && !m.key.fromMe && body.length > 2 && !from.endsWith('@g.us')) {
             try {
-                const aiPrompt = `Your name is THE NUN. Developer: STANYTZ. Respond naturally and briefly in the user's language: ${body}`;
+                const aiPrompt = `Your name is THE NUN. Developer: STANYTZ. Respond naturally, briefly, and helpfully in the user's language: ${body}`;
                 const aiRes = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`);
                 await sockInstance.sendMessage(from, { text: `ᴛʜᴇ ɴᴜɴ 🥀\n\n${aiRes.data}\n\n_ɪɴ ꜱʜᴀᴅᴏᴡꜱ ᴡᴇ ᴛʀᴜꜱᴛ._`, contextInfo: ghostContext }, { quoted: m });
             } catch (e) {}
@@ -156,83 +157,55 @@ async function startUserBot(num) {
 }
 
 /**
- * 📦 FIREBASE AUTH WRAPPER
+ * 🟢 ROUTES (HEALTH, LINKING, UI)
  */
-async function useFirebaseAuthState(num) {
-    const fixId = (id) => `nun_${num}_${id.replace(/\//g, '__').replace(/\@/g, 'at')}`;
-    const writeData = async (data, id) => setDoc(doc(db, "NUN_SESSIONS", fixId(id)), JSON.parse(JSON.stringify(data, BufferJSON.replacer)));
-    const readData = async (id) => {
-        const snapshot = await getDoc(doc(db, "NUN_SESSIONS", fixId(id)));
-        return snapshot.exists() ? JSON.parse(JSON.stringify(snapshot.data()), BufferJSON.reviver) : null;
-    };
-    let creds = await readData('creds') || initAuthCreds();
-    return { 
-        state: { creds, keys: {
-            get: async (type, ids) => {
-                const data = {};
-                await Promise.all(ids.map(async id => {
-                    let value = await readData(`${type}-${id}`);
-                    if (type === 'app-state-sync-key' && value) value = require('@whiskeysockets/baileys').proto.Message.AppStateSyncKeyData.fromObject(value);
-                    data[id] = value;
-                }));
-                return data;
-            },
-            set: async (data) => {
-                for (const type in data) {
-                    for (const id in data[type]) {
-                        const value = data[type][id];
-                        if (value) await writeData(value, `${type}-${id}`);
-                        else await deleteDoc(doc(db, "NUN_SESSIONS", fixId(`${type}-${id}`)));
-                    }
-                }
-            }
-        }},
-        saveCreds: () => writeData(creds, 'creds'),
-        wipeSession: async () => {
-            const q = query(collection(db, "NUN_SESSIONS"), where("__name__", ">=", `nun_${num}`), where("__name__", "<=", `nun_${num}\uf8ff`));
-            const snap = await getDocs(q);
-            snap.forEach(async d => await deleteDoc(d.ref));
-        }
-    };
-}
+app.get('/', (req, res) => {
+    res.status(200).send(`
+        <body style="background:#050505;color:#ff0000;font-family:serif;text-align:center;padding-top:100px;">
+            <img src="https://files.catbox.moe/59ays3.jpg" style="width:150px;border-radius:50%;border:2px solid #ff0000;">
+            <h1 style="letter-spacing:15px;">T H E  N U N</h1>
+            <p>MAINFRAME: <span style="color:#00ff00">ACTIVE</span></p>
+            <p>ACTIVE NODES: ${activeSessions.size}</p>
+            <p style="color:#444">DEVELOPED BY STANYTZ</p>
+        </body>
+    `);
+});
 
-// 🟢 PAIRING ROUTE (ZERO ERRORS)
+app.use(express.static('public'));
+app.get('/link', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
+
 app.get('/code', async (req, res) => {
     let num = req.query.number.replace(/\D/g, '');
     try {
-        const { state, saveCreds, wipeSession } = await useFirebaseAuthState(num);
+        const { useFirebaseAuthState } = require('./lib/firestoreAuth');
+        const { state, saveCreds, wipeSession } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
         await wipeSession();
         const pSock = makeWASocket({
             auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
             logger: pino({ level: 'silent' }),
-            browser: Browsers.macOS("Safari")
+            browser: Browsers.ubuntu("Chrome")
         });
         pSock.ev.on('creds.update', saveCreds);
         await delay(5000);
         let code = await pSock.requestPairingCode(num);
         res.send({ code });
-        pSock.ev.on('connection.update', (u) => { if (u.connection === 'open') startUserBot(num); });
+        pSock.ev.on('connection.update', (u) => { if (u.connection === 'open') { pSock.end?.(); startUserBot(num); } });
     } catch (e) { res.status(500).send({ error: "System Busy" }); }
 });
 
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
-app.use(express.static('public'));
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    // Command Loader Initialization
+    // Command Loader Initialized
     const cmdPath = path.resolve(__dirname, 'commands');
-    if (fs.existsSync(cmdPath)) {
-        fs.readdirSync(cmdPath).forEach(folder => {
-            const folderPath = path.join(cmdPath, folder);
-            if (fs.lstatSync(folderPath).isDirectory()) {
-                fs.readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
-                    const cmd = require(path.join(folderPath, file));
-                    if (cmd && cmd.name) { cmd.category = folder; commands.set(cmd.name.toLowerCase(), cmd); }
-                });
-            }
-        });
-    }
+    require('fs').readdirSync(cmdPath).forEach(folder => {
+        const folderPath = path.join(cmdPath, folder);
+        if (require('fs').lstatSync(folderPath).isDirectory()) {
+            require('fs').readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
+                const cmd = require(path.join(folderPath, file));
+                if (cmd && cmd.name) { cmd.category = folder; commands.set(cmd.name.toLowerCase(), cmd); }
+            });
+        }
+    });
     console.log(`The Nun Vigil: ${PORT}`);
     // 🟢 AUTO-RESTORE
     getDocs(collection(db, "NUN_ACTIVE_USERS")).then(snap => snap.forEach(d => d.data().active && startUserBot(d.id)));
