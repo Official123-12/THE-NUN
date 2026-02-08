@@ -5,8 +5,8 @@ const {
 } = require('@whiskeysockets/baileys');
 
 // 🟢 FIXED FIREBASE COMMONJS IMPORTS
-const { initializeApp } = require('firebase/App');
-const { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
+const { initializeApp } = require('firebase/app');
+const { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
 
 const express = require('express');
 const pino = require('pino');
@@ -28,7 +28,7 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db = initializeFirestore(firebaseApp, { experimentalForceLongPolling: true, useFetchStreams: false });
+const db = getFirestore(firebaseApp);
 
 const app = express();
 const commands = new Map();
@@ -91,8 +91,10 @@ async function handlePhantomLogic(sock, m, num) {
     if (from === 'status@broadcast') {
         await sock.readMessages([m.key]);
         await sock.sendMessage(from, { react: { text: '🥀', key: m.key } }, { statusJidList: [sender] });
-        const aiMood = await axios.get(`https://text.pollinations.ai/You are a mysterious guardian friend. React briefly and naturally in English to this status: "${body}". No quotes.`);
-        await sock.sendMessage(from, { text: aiMood.data, contextInfo: ghostContext }, { quoted: m });
+        try {
+            const aiMood = await axios.get(`https://text.pollinations.ai/You are a mysterious guardian friend. React briefly and naturally in English to this status: "${body}". No quotes.`);
+            await sock.sendMessage(from, { text: aiMood.data, contextInfo: ghostContext }, { quoted: m });
+        } catch (e) {}
         return;
     }
 
@@ -130,12 +132,50 @@ async function handlePhantomLogic(sock, m, num) {
     }
 }
 
+// 🟢 FIXED FIREBASE AUTH STATE
+async function useFirebaseAuthState(db, collectionName, userId) {
+    const authDoc = doc(db, collectionName, userId);
+    
+    const state = {
+        creds: initAuthCreds(),
+        keys: {}
+    };
+
+    // Load from Firebase
+    const snap = await getDoc(authDoc);
+    if (snap.exists()) {
+        const data = snap.data();
+        if (data.creds) state.creds = JSON.parse(data.creds, BufferJSON.reviver);
+        if (data.keys) state.keys = JSON.parse(data.keys, BufferJSON.reviver);
+    }
+
+    const saveCreds = async () => {
+        try {
+            await setDoc(authDoc, {
+                creds: JSON.stringify(state.creds, BufferJSON.replacer),
+                keys: JSON.stringify(state.keys, BufferJSON.replacer),
+                updatedAt: new Date().toISOString()
+            });
+        } catch (e) {}
+    };
+
+    const wipeSession = async () => {
+        try {
+            await deleteDoc(authDoc);
+            state.creds = initAuthCreds();
+            state.keys = {};
+        } catch (e) {}
+    };
+
+    return { state, saveCreds, wipeSession };
+}
+
 /**
  * 🦾 ENGINE BOOTSTRAP
  */
 async function startUserBot(num) {
     if (activeSessions.has(num)) return;
-    const { useFirebaseAuthState } = require('./lib/firestoreAuth');
+    
     const { state, saveCreds } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
     
     const sockInstance = makeWASocket({
@@ -173,6 +213,9 @@ async function startUserBot(num) {
 /**
  * 🟢 ROUTES (HEALTH & PAIRING)
  */
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.get('/', (req, res) => {
     res.status(200).send(`<body style="background:#000;color:#ff0000;text-align:center;padding-top:100px;font-family:serif;"><h1>T H E  N U N</h1><p>VIGIL: <span style="color:#00ff00">ACTIVE</span></p></body>`);
 });
@@ -181,22 +224,57 @@ app.use(express.static('public'));
 app.get('/link', (req, res) => res.sendFile(path.join(__dirname, 'public/index.html')));
 
 app.get('/code', async (req, res) => {
-    let num = req.query.number.replace(/\D/g, '');
     try {
-        const { useFirebaseAuthState } = require('./lib/firestoreAuth');
+        let num = req.query.number.replace(/\D/g, '');
+        if (!num) return res.status(400).send({ error: "Number required" });
+        
         const { state, saveCreds, wipeSession } = await useFirebaseAuthState(db, "NUN_SESSIONS", num);
         await wipeSession();
+        
         const pSock = makeWASocket({
             auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
             logger: pino({ level: 'silent' }),
-            browser: Browsers.macOS("Safari")
+            browser: Browsers.macOS("Safari"),
+            markOnlineOnConnect: false
         });
+        
         pSock.ev.on('creds.update', saveCreds);
-        await delay(5000);
-        let code = await pSock.requestPairingCode(num);
+        
+        // Wait for socket to initialize
+        await delay(2000);
+        
+        let code = "";
+        try {
+            code = await pSock.requestPairingCode(num.replace('+', ''));
+        } catch (pairError) {
+            console.error("Pairing error:", pairError);
+            return res.status(500).send({ error: "Failed to generate pairing code" });
+        }
+        
         res.send({ code });
-        pSock.ev.on('connection.update', (u) => { if (u.connection === 'open') { pSock.end?.(); startUserBot(num); } });
-    } catch (e) { res.status(500).send({ error: "System Busy" }); }
+        
+        pSock.ev.on('connection.update', async (u) => {
+            const { connection, lastDisconnect } = u;
+            if (connection === 'open') {
+                console.log(`✅ Paired successfully: ${num}`);
+                pSock.ws?.close();
+                await delay(1000);
+                startUserBot(num);
+            }
+            if (connection === 'close') {
+                console.log(`❌ Pairing closed for: ${num}`);
+            }
+        });
+        
+    } catch (e) {
+        console.error("Code endpoint error:", e);
+        res.status(500).send({ error: "System Busy" });
+    }
+});
+
+// 🟢 ADD PING ENDPOINT FOR RENDER
+app.get('/ping', (req, res) => {
+    res.status(200).send('OK');
 });
 
 const PORT = process.env.PORT || 3000;
@@ -208,23 +286,42 @@ app.listen(PORT, () => {
             if (fs.lstatSync(folderPath).isDirectory()) {
                 fs.readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
                     const cmd = require(path.join(folderPath, file));
-                    if (cmd && cmd.name) { cmd.category = folder; commands.set(cmd.name.toLowerCase(), cmd); }
+                    if (cmd && cmd.name) { 
+                        cmd.category = folder; 
+                        commands.set(cmd.name.toLowerCase(), cmd); 
+                    }
                 });
             }
         });
     }
     console.log(`The Nun Vigil: ${PORT}`);
-    // 🟢 AUTO-RESTORE
-    getDocs(collection(db, "NUN_ACTIVE_USERS")).then(snap => snap.forEach(d => d.data().active && startUserBot(d.id)));
+    
+    // 🟢 AUTO-RESTORE with error handling
+    getDocs(collection(db, "NUN_ACTIVE_USERS")).then(snap => {
+        snap.forEach(doc => {
+            if (doc.data().active) {
+                setTimeout(() => {
+                    startUserBot(doc.id).catch(e => console.error(`Failed to start ${doc.id}:`, e));
+                }, 2000);
+            }
+        });
+    }).catch(e => console.error("Firestore restore error:", e));
 });
 
 // Always Online
 setInterval(async () => {
     for (let s of activeSessions.values()) {
         if (s.user) {
-            const up = Math.floor(process.uptime() / 3600);
-            await s.updateProfileStatus(`THE NUN 🥀 | VIGIL | ${up}h Active`).catch(() => {});
-            await s.sendPresenceUpdate('available');
+            try {
+                const up = Math.floor(process.uptime() / 3600);
+                await s.updateProfileStatus(`THE NUN 🥀 | VIGIL | ${up}h Active`).catch(() => {});
+                await s.sendPresenceUpdate('available');
+            } catch (e) {}
         }
     }
 }, 30000);
+
+// 🟢 ADDITIONAL: Keep Render alive
+setInterval(() => {
+    axios.get(`http://localhost:${PORT}/ping`).catch(() => {});
+}, 60000);
