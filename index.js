@@ -3,7 +3,7 @@ const {
     default: makeWASocket, DisconnectReason, Browsers, delay, fetchLatestBaileysVersion, 
     makeCacheableSignalKeyStore, initAuthCreds, BufferJSON, getContentType 
 } = require('@whiskeysockets/baileys');
-const { initializeApp } = require('firebase/firestore');
+const { initializeApp } = require('firebase/app');
 const { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
 const express = require('express');
 const pino = require('pino');
