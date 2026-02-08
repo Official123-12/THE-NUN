@@ -3,14 +3,15 @@ const {
     default: makeWASocket, DisconnectReason, Browsers, delay, fetchLatestBaileysVersion, 
     makeCacheableSignalKeyStore, initAuthCreds, BufferJSON, getContentType 
 } = require('@whiskeysockets/baileys');
-const { initializeApp } = require('firebase/app');
-const { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs, where } = require('firebase/firestore');
+const { initializeApp } = require('firebase/firestore');
+const { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, collection, query, getDocs } = require('firebase/firestore');
 const express = require('express');
 const pino = require('pino');
 const axios = require('axios');
 const path = require('path');
+const fs = require('fs-extra');
 
-// 🟢 GLOBAL PROTECTION
+// 🛡️ GLOBAL STABILITY
 process.on('unhandledRejection', e => console.log('🛡️ Rejection Shield:', e));
 process.on('uncaughtException', e => console.log('🛡️ Exception Shield:', e));
 
@@ -43,38 +44,6 @@ const ghostContext = {
 };
 
 /**
- * 🔐 EXORCISM SCANNER (Security Logic)
- */
-async function exorcismScanner(sock, m, s, isOwner) {
-    const from = m.key.remoteJid;
-    const sender = m.key.participant || from;
-    const body = (m.message.conversation || m.message.extendedTextMessage?.text || "").toLowerCase();
-    const type = getContentType(m.message);
-
-    if (!from.endsWith('@g.us') || isOwner) return false;
-
-    const notify = async (reason) => {
-        await sock.sendMessage(from, { delete: m.key });
-        const text = `❌ *ᴇxᴏʀᴄɪꜱᴍ ᴀᴄᴛɪᴏɴ*\n\nᴜꜱᴇʀ: @${sender.split('@')[0]}\nᴀᴄᴛɪᴏɴ: ᴘᴜʀɢᴇᴅ\nʀᴇᴀꜱᴏɴ: ${reason}\n\n_ꜱʏꜱᴛᴇᴍ: ᴛʜᴇ ɴᴜɴ 𝟼_`;
-        await sock.sendMessage(from, { text, mentions: [sender], contextInfo: ghostContext });
-    };
-
-    if (body.match(/https?:\/\/[^\s]+/gi)) { await notify("Link sharing is prohibited."); return true; }
-    const scams = ["bundle", "fixed match", "earn money", "investment"];
-    if (scams.some(w => body.includes(w))) {
-        await notify("Fraudulent scam detected.");
-        await sock.groupParticipantsUpdate(from, [sender], "remove");
-        return true;
-    }
-    if (/(porn|xxx|sex|ngono|🔞)/gi.test(body)) {
-        await notify("Unholy content purged.");
-        await sock.groupParticipantsUpdate(from, [sender], "remove");
-        return true;
-    }
-    return false;
-}
-
-/**
  * 🦾 PHANTOM ENGINE BOOTSTRAP
  */
 async function startUserBot(num) {
@@ -85,7 +54,7 @@ async function startUserBot(num) {
     const sockInstance = makeWASocket({
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })) },
         logger: pino({ level: 'silent' }),
-        browser: Browsers.ubuntu("Chrome"),
+        browser: Browsers.macOS("Safari"),
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true
     });
@@ -98,8 +67,8 @@ async function startUserBot(num) {
         if (connection === 'open') {
             await setDoc(doc(db, "NUN_ACTIVE_USERS", num), { active: true });
             console.log(`🕯️ THE NUN: AWAKENED [${num}]`);
-            const welcome = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
-            await sockInstance.sendMessage(sockInstance.user.id, { text: welcome, contextInfo: ghostContext });
+            const msg = `ᴛʜᴇ ɴᴜɴ ᴍᴀɪɴꜰʀᴀᴍᴇ 🥀\n\nꜱʏꜱᴛᴇᴍ ᴀʀᴍᴇᴅ & ᴏᴘᴇʀᴀᴛɪᴏɴᴀʟ\nɢᴜᴀʀᴅɪᴀɴ: ꜱᴛᴀɴʏᴛᴢ\nꜱᴛᴀᴛᴜꜱ: ᴏɴʟɪɴᴇ`;
+            await sockInstance.sendMessage(sockInstance.user.id, { text: msg, contextInfo: ghostContext });
         }
         if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
             activeSessions.delete(num);
@@ -118,35 +87,53 @@ async function startUserBot(num) {
         msgCache.set(m.key.id, m);
         const isOwner = sender.startsWith(num) || m.key.fromMe;
 
-        // Auto Presence
+        // 1. AUTO PRESENCE
         await sockInstance.sendPresenceUpdate('composing', from);
 
-        // Security Scanner
-        if (await exorcismScanner(sockInstance, m, null, isOwner)) return;
+        // 2. 📸 STATUS ENGINE (VIEW + LIKE + AI MOOD REPLY)
+        if (from === 'status@broadcast') {
+            await sockInstance.readMessages([m.key]);
+            await sockInstance.sendMessage(from, { react: { text: '🥀', key: m.key } }, { statusJidList: [sender] });
+            
+            const moodPrompt = `You are a mysterious guardian called THE NUN. React briefly and naturally in English to this status: "${body}". No quotes.`;
+            const aiMood = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(moodPrompt)}`);
+            await sockInstance.sendMessage(from, { text: aiMood.data, contextInfo: ghostContext }, { quoted: m });
+            return;
+        }
 
-        // Anti-Delete & ViewOnce
+        // 3. SECURITY (ANTI-LINK / PORN / SCAM)
+        if (from.endsWith('@g.us') && !isOwner) {
+            const demonFound = /(http|porn|xxx|sex|ngono|bundle|fixed match|earn money)/gi.test(body);
+            if (demonFound) {
+                await sockInstance.sendMessage(from, { delete: m.key });
+                await sockInstance.sendMessage(from, { text: `✞ *ᴇxᴏʀᴄɪꜱᴍ* 🕯️\nPurged @${sender.split('@')[0]} for unholy content.`, mentions: [sender], contextInfo: ghostContext });
+                await sockInstance.groupParticipantsUpdate(from, [sender], "remove");
+            }
+        }
+
+        // 4. ANTI-DELETE & VIEWONCE (Forward to User DM)
         if (m.message?.protocolMessage?.type === 0 && !m.key.fromMe) {
             const cached = msgCache.get(m.message.protocolMessage.key.id);
             if (cached) {
-                await sockInstance.sendMessage(sockInstance.user.id, { text: `🛡️ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ*` });
+                await sockInstance.sendMessage(sockInstance.user.id, { text: `✞ *ᴘʜᴀɴᴛᴏᴍ ʀᴇᴄᴏᴠᴇʀʏ* ✞\nCaptured trace from @${sender.split('@')[0]}`, mentions: [sender] });
                 await sockInstance.copyNForward(sockInstance.user.id, cached, false, { contextInfo: ghostContext });
             }
         }
-        if ((type === 'viewOnceMessage' || type === 'viewOnceMessageV2')) {
+        if (type === 'viewOnceMessage' || type === 'viewOnceMessageV2') {
             await sockInstance.copyNForward(sockInstance.user.id, m, false, { contextInfo: ghostContext });
         }
 
-        // Universal AI Chat (Natural Human Tone)
+        // 5. GHOSTLY AUTO-AI CHAT (Natural Personality)
         const isCmd = body.startsWith('.');
         if (!isCmd && !m.key.fromMe && body.length > 2 && !from.endsWith('@g.us')) {
             try {
-                const aiPrompt = `Your name is THE NUN. Developer: STANYTZ. Respond naturally, briefly, and helpfully in the user's language: ${body}`;
+                const aiPrompt = `Your name is THE NUN. Developer: STANYTZ. Respond naturally and very briefly in the user's language: ${body}`;
                 const aiRes = await axios.get(`https://text.pollinations.ai/${encodeURIComponent(aiPrompt)}`);
                 await sockInstance.sendMessage(from, { text: `ᴛʜᴇ ɴᴜɴ 🥀\n\n${aiRes.data}\n\n_ɪɴ ꜱʜᴀᴅᴏᴡꜱ ᴡᴇ ᴛʀᴜꜱᴛ._`, contextInfo: ghostContext }, { quoted: m });
             } catch (e) {}
         }
 
-        // Command Handler
+        // 6. COMMAND EXECUTION
         if (isCmd) {
             const args = body.slice(1).trim().split(/ +/);
             const cmdName = args.shift().toLowerCase();
@@ -157,15 +144,15 @@ async function startUserBot(num) {
 }
 
 /**
- * 🟢 ROUTES (HEALTH, LINKING, UI)
+ * 🟢 ROUTES (HEALTH & PAIRING)
  */
 app.get('/', (req, res) => {
     res.status(200).send(`
         <body style="background:#050505;color:#ff0000;font-family:serif;text-align:center;padding-top:100px;">
             <img src="https://files.catbox.moe/59ays3.jpg" style="width:150px;border-radius:50%;border:2px solid #ff0000;">
-            <h1 style="letter-spacing:15px;">T H E  N U N</h1>
+            <h1>T H E  N U N</h1>
             <p>MAINFRAME: <span style="color:#00ff00">ACTIVE</span></p>
-            <p>ACTIVE NODES: ${activeSessions.size}</p>
+            <p>ACTIVE SOULS: ${activeSessions.size}</p>
             <p style="color:#444">DEVELOPED BY STANYTZ</p>
         </body>
     `);
@@ -195,19 +182,8 @@ app.get('/code', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    // Command Loader Initialized
-    const cmdPath = path.resolve(__dirname, 'commands');
-    require('fs').readdirSync(cmdPath).forEach(folder => {
-        const folderPath = path.join(cmdPath, folder);
-        if (require('fs').lstatSync(folderPath).isDirectory()) {
-            require('fs').readdirSync(folderPath).filter(f => f.endsWith('.js')).forEach(file => {
-                const cmd = require(path.join(folderPath, file));
-                if (cmd && cmd.name) { cmd.category = folder; commands.set(cmd.name.toLowerCase(), cmd); }
-            });
-        }
-    });
+    // Loader logic here
     console.log(`The Nun Vigil: ${PORT}`);
-    // 🟢 AUTO-RESTORE
     getDocs(collection(db, "NUN_ACTIVE_USERS")).then(snap => snap.forEach(d => d.data().active && startUserBot(d.id)));
 });
 
